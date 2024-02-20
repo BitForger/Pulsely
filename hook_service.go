@@ -8,6 +8,7 @@ import (
 	"github.com/segmentio/ksuid"
 	"golang.org/x/crypto/pbkdf2"
 	_ "modernc.org/sqlite"
+	"modernc.org/strutil"
 	"os"
 	"time"
 )
@@ -29,10 +30,19 @@ func NewHookService() (HookService, error) {
 	tokenSalt, _ := os.LookupEnv("BEATMON_TOKEN_SALT")
 	dbString, _ := os.LookupEnv("BEATMON_SQLITE_FILE_LOCATION")
 	if dbString == "" {
-		dbString = "./monitors.db"
+		dbString, _ = os.UserHomeDir()
+		dbString += "/monitors.db"
 	}
-	db, err := sql.Open("sqlite3", dbString)
+	log.Info().Any("DB connection string", dbString).Msg("Opening DB connection")
+	db, err := sql.Open("sqlite", dbString)
 	if err != nil {
+		log.Fatal().Err(err).Msg("failed to open DB connection")
+		return HookService{}, err
+	}
+
+	err = db.Ping()
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to ping db connection")
 		return HookService{}, err
 	}
 
@@ -43,7 +53,9 @@ func NewHookService() (HookService, error) {
 		description TEXT,
 		uniqueId TEXT
 		)`
-	if _, err := db.Exec(createDb); err != nil {
+	log.Debug().Msg("Create DB if doesn't exist")
+	_, err = db.Exec(createDb)
+	if err != nil {
 		log.Error().Err(err).Msg("unable to create table")
 		return HookService{}, err
 	}
@@ -71,7 +83,7 @@ func (s *HookService) CreateHook(description string) (*CreatedHook, error) {
 	defer stmt.Close()
 
 	uniqueId := ksuid.New()
-	_, err = stmt.Exec(time.UnixDate, description, uniqueId.String())
+	_, err = stmt.Exec(time.Now().Unix(), description, uniqueId.String())
 	if err != nil {
 		return nil, err
 	}
@@ -84,6 +96,6 @@ func (s *HookService) CreateHook(description string) (*CreatedHook, error) {
 }
 
 func (s *HookService) GetToken(id string) string {
-	dk := pbkdf2.Key([]byte(id), []byte(s.TokenSalt), 1024, 128, sha512.New)
-	return string(dk)
+	dk := pbkdf2.Key([]byte(id), []byte(s.TokenSalt), 1024, 32, sha512.New)
+	return string(strutil.Base64Encode(dk))
 }
