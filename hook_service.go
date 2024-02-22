@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha512"
 	"database/sql"
+	"errors"
 	"fmt"
 	"github.com/rs/zerolog/log"
 	"github.com/segmentio/ksuid"
@@ -46,25 +47,39 @@ func NewHookService() (HookService, error) {
 		return HookService{}, err
 	}
 
-	const createDb string = `
-      	CREATE TABLE IF NOT EXISTS monitors (
-      	id INTEGER NOT NULL PRIMARY KEY,
-		timestamp DATETIME NOT NULL,
-		description TEXT,
-		uniqueId TEXT
-		)`
-	log.Debug().Msg("Create DB if doesn't exist")
-	_, err = db.Exec(createDb)
-	if err != nil {
-		log.Error().Err(err).Msg("unable to create table")
-		return HookService{}, err
-	}
+	prepareTables(db)
 
 	return HookService{
 		Host:      hostEnvVar,
 		TokenSalt: tokenSalt,
 		Db:        db,
 	}, nil
+}
+
+func prepareTables(db *sql.DB) {
+	log.Debug().Msg("Create tables if doesn't exist")
+	const createMonitorsTable string = `
+      	CREATE TABLE IF NOT EXISTS monitors (
+      	id INTEGER NOT NULL PRIMARY KEY,
+		timestamp DATETIME NOT NULL,
+		description TEXT,
+		uniqueId TEXT
+		)`
+	const createHeartbeatsTable string = `
+	CREATE TABLE IF NOT EXISTS heartbeats (
+	    id INTEGER NOT NULL PRIMARY KEY,
+	    timestamp DATETIME NOT NULL,
+	    up INTEGER NOT NULL CHECK (up IN (0, 1)),
+	    hookId TEXT NOT NULL
+)`
+	_, err := db.Exec(createMonitorsTable)
+	if err != nil {
+		log.Fatal().Err(err).Msg("unable to create table - monitors")
+	}
+	_, err = db.Exec(createHeartbeatsTable)
+	if err != nil {
+		log.Fatal().Err(err).Msg("unable to create table - heartbeats")
+	}
 }
 
 func (s *HookService) CreateHook(description string) (*CreatedHook, error) {
@@ -98,4 +113,50 @@ func (s *HookService) CreateHook(description string) (*CreatedHook, error) {
 func (s *HookService) GetToken(id string) string {
 	dk := pbkdf2.Key([]byte(id), []byte(s.TokenSalt), 1024, 32, sha512.New)
 	return string(strutil.Base64Encode(dk))
+}
+
+func (s *HookService) SaveHeartbeat(id string, up bool) (ok bool, err error) {
+	// Check that hook exists
+	const findQuery string = "SELECT EXISTS(SELECT 1 FROM monitors WHERE uniqueId=?)"
+	stmt, err := s.Db.Prepare(findQuery)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to prepare find statement")
+		return false, err
+	}
+	defer stmt.Close()
+
+	res, stmtErr := stmt.Exec(id)
+	if stmtErr != nil {
+		errMsg := fmt.Sprintf("error getting rows for id - %s", id)
+		log.Error().Err(stmtErr).Msg(errMsg)
+		return false, errors.New(errMsg)
+	}
+	affectedRows, _ := res.RowsAffected()
+	if affectedRows < 1 {
+		errMsg := fmt.Sprintf("no monitor found for id - %s", id)
+		log.Error().Msg(errMsg)
+		return false, errors.New(errMsg)
+	}
+
+	// insert heartbeat status
+	const insertQuery string = "INSERT INTO heartbeats (timestamp, up, hookId) VALUES (?,?,?)"
+	stmt, err = s.Db.Prepare(insertQuery)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to prepare insert statement")
+		return false, err
+	}
+	defer stmt.Close()
+
+	var upStatus = 0
+	if up {
+		upStatus = 1
+	}
+
+	_, err = stmt.Exec(time.Now().Unix(), upStatus, id)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to insert heartbeat status")
+		return false, err
+	}
+
+	return true, nil
 }

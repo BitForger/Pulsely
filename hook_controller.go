@@ -25,5 +25,15 @@ func HookCreatehook(ctx fiber.Ctx) error {
 }
 
 func HookCreateHeartbeat(ctx fiber.Ctx) error {
-	return nil
+	log.Info().Msg("Start request")
+	id := ctx.Params("id")
+	hSvc, _ := NewHookService()
+
+	ok, err := hSvc.SaveHeartbeat(id, true)
+	if ok {
+		return ctx.Status(fiber.StatusOK).Next()
+	}
+
+	log.Error().Err(err).Msg("request failed")
+	return ctx.SendStatus(fiber.StatusBadRequest)
 }
