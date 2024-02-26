@@ -29,8 +29,8 @@ func LoggerMiddleware(conf ...LoggerMiddlewareConfig) fiber.Handler {
 
 	return func(fiberCtx fiber.Ctx) error {
 		if config.Next != nil && config.Next(&fiberCtx) {
-			fiberCtx.Next()
-			return nil
+			log.Debug().Msg("Going to next")
+			return fiberCtx.Next()
 		}
 
 		startTime := time.Now()
@@ -41,6 +41,7 @@ func LoggerMiddleware(conf ...LoggerMiddlewareConfig) fiber.Handler {
 			Str("method", fiberCtx.Method()).
 			Str("path", fiberCtx.Path()).
 			Str("ip", fiberCtx.IP()).
+			// Note: doesn't actually calc duration of request
 			Str("duration", time.Since(startTime).String()).
 			Str("user-agent", fiberCtx.Get(fiber.HeaderUserAgent)).
 			Logger()
@@ -56,7 +57,7 @@ func LoggerMiddleware(conf ...LoggerMiddlewareConfig) fiber.Handler {
 		} else {
 			returnedLogger.Info().Msg(msg)
 		}
-		return nil
+		return fiberCtx.Next()
 	}
 }
 
