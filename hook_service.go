@@ -98,7 +98,7 @@ func (s *HookService) CreateHook(description string) (*CreatedHook, error) {
 	defer stmt.Close()
 
 	uniqueId := ksuid.New()
-	_, err = stmt.Exec(time.Now().Unix(), description, uniqueId.String())
+	_, err = stmt.Exec(time.Now().UTC(), description, uniqueId.String())
 	if err != nil {
 		return nil, err
 	}
