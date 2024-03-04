@@ -24,7 +24,7 @@ func LoggerMiddleware(conf ...LoggerMiddlewareConfig) fiber.Handler {
 	if config.Logger != nil {
 		zLogger = *config.Logger
 	} else {
-		zLogger = log.Logger.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+		zLogger = zerolog.New(zerolog.NewConsoleWriter())
 	}
 
 	return func(fiberCtx fiber.Ctx) error {
@@ -87,6 +87,7 @@ func main() {
 	v1 := app.Group("api/v1")
 	v1.Post("hooks", HookCreatehook)
 	v1.Post("hooks/:id", HookCreateHeartbeat)
+	v1.Patch("hooks/:id", UpdateHeartbeat)
 
 	app.Listen(":3000")
 }

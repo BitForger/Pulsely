@@ -10,6 +10,8 @@ type CreatHookBody struct {
 	Description string `json:"description"`
 }
 
+type UpdateHookBody = CreatHookBody
+
 func HookCreatehook(ctx fiber.Ctx) error {
 	var bodyJson CreatHookBody
 	err := json.Unmarshal(ctx.Body(), &bodyJson)
@@ -36,4 +38,22 @@ func HookCreateHeartbeat(ctx fiber.Ctx) error {
 
 	log.Error().Err(err).Msg("request failed")
 	return ctx.SendStatus(fiber.StatusBadRequest)
+}
+
+func UpdateHeartbeat(ctx fiber.Ctx) error {
+	var updateHookBody UpdateHookBody
+	id := ctx.Params("id")
+	err := json.Unmarshal(ctx.Body(), &updateHookBody)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to decode body")
+	}
+
+	hSvc, _ := NewHookService()
+	ok, err := hSvc.UpdateHook(id, updateHookBody.Description)
+	if !ok {
+		log.Error().Err(err).Msg("failed to update hook")
+		return ctx.SendStatus(fiber.StatusInternalServerError)
+	}
+
+	return ctx.SendStatus(fiber.StatusOK)
 }

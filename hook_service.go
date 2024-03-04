@@ -59,19 +59,19 @@ func NewHookService() (HookService, error) {
 func prepareTables(db *sql.DB) {
 	log.Debug().Msg("Create tables if doesn't exist")
 	const createMonitorsTable string = `
-      	CREATE TABLE IF NOT EXISTS monitors (
-      	id INTEGER NOT NULL PRIMARY KEY,
+	CREATE TABLE IF NOT EXISTS monitors (
+		id INTEGER NOT NULL PRIMARY KEY,
 		timestamp DATETIME NOT NULL,
 		description TEXT,
 		uniqueId TEXT
-		)`
+	)`
 	const createHeartbeatsTable string = `
 	CREATE TABLE IF NOT EXISTS heartbeats (
-	    id INTEGER NOT NULL PRIMARY KEY,
-	    timestamp DATETIME NOT NULL,
-	    up INTEGER NOT NULL CHECK (up IN (0, 1)),
-	    hookId TEXT NOT NULL
-)`
+		id INTEGER NOT NULL PRIMARY KEY,
+		timestamp DATETIME NOT NULL,
+		up INTEGER NOT NULL CHECK (up IN (0, 1)),
+		hookId TEXT NOT NULL
+	)`
 	_, err := db.Exec(createMonitorsTable)
 	if err != nil {
 		log.Fatal().Err(err).Msg("unable to create table - monitors")
@@ -156,6 +156,35 @@ func (s *HookService) SaveHeartbeat(id string, up bool) (ok bool, err error) {
 	if err != nil {
 		log.Error().Err(err).Msg("failed to insert heartbeat status")
 		return false, err
+	}
+
+	return true, nil
+}
+
+func (s *HookService) UpdateHook(id, description string) (bool, error) {
+	if s == nil {
+		log.Error().Msg("s is nil")
+	}
+	if &s.Db == nil {
+		log.Warn().Msg("DB is nil")
+	}
+	defer s.Db.Close()
+	const query = `UPDATE monitors SET description = ? WHERE uniqueId = ?`
+	stmt, err := s.Db.Prepare(query)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to prepare update query")
+		return false, err
+	}
+	defer stmt.Close()
+
+	result, err := stmt.Exec(description, id)
+	if err != nil {
+		log.Error().Err(err).Err(err).Msg("failed to update hook")
+		return false, err
+	}
+	rowsAff, _ := result.RowsAffected()
+	if rowsAff < 1 {
+		log.Warn().Any("rows affected", rowsAff).Msg("no error received but no rows affected")
 	}
 
 	return true, nil
