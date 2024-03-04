@@ -27,7 +27,10 @@ type CreatedHook struct {
 }
 
 func NewHookService() (HookService, error) {
-	hostEnvVar, _ := os.LookupEnv("BEATMON_HOST")
+	hostEnvVar, found := os.LookupEnv("BEATMON_HOST")
+	if !found {
+		hostEnvVar = "localhost"
+	}
 	tokenSalt, _ := os.LookupEnv("BEATMON_TOKEN_SALT")
 	dbString, _ := os.LookupEnv("BEATMON_SQLITE_FILE_LOCATION")
 	if dbString == "" {
