@@ -32,22 +32,10 @@ func NewHookService() (HookService, error) {
 		hostEnvVar = "localhost"
 	}
 	tokenSalt, _ := os.LookupEnv("BEATMON_TOKEN_SALT")
-	dbString, _ := os.LookupEnv("BEATMON_SQLITE_FILE_LOCATION")
-	if dbString == "" {
-		dbString, _ = os.UserHomeDir()
-		dbString += "/monitors.db"
-	}
-	log.Info().Any("DB connection string", dbString).Msg("Opening DB connection")
-	db, err := sql.Open("sqlite", dbString)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to open DB connection")
-		return HookService{}, err
-	}
 
-	err = db.Ping()
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to ping db connection")
-		return HookService{}, err
+	ok, db, err := NewDbConnection()
+	if !ok {
+		log.Fatal().Err(err).Msg("unable to connect to database")
 	}
 
 	prepareTables(db)
