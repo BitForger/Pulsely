@@ -20,6 +20,7 @@ type HookService struct {
 	Db        *sql.DB
 }
 
+// CreatedHook is a struct that represents the response body from creating a hook
 type CreatedHook struct {
 	Hook        string `json:"hook"`
 	Description string `json:"description"`
@@ -37,9 +38,6 @@ func NewHookService() (HookService, error) {
 	if !ok {
 		log.Fatal().Err(err).Msg("unable to connect to database")
 	}
-
-	prepareTables(db)
-
 	return HookService{
 		Host:      hostEnvVar,
 		TokenSalt: tokenSalt,
@@ -47,40 +45,17 @@ func NewHookService() (HookService, error) {
 	}, nil
 }
 
-func prepareTables(db *sql.DB) {
-	log.Debug().Msg("Create tables if doesn't exist")
-	const createMonitorsTable string = `
-	CREATE TABLE IF NOT EXISTS monitors (
-		id INTEGER NOT NULL PRIMARY KEY,
-		timestamp DATETIME NOT NULL,
-		description TEXT,
-		uniqueId TEXT
-	)`
-	const createHeartbeatsTable string = `
-	CREATE TABLE IF NOT EXISTS heartbeats (
-		id INTEGER NOT NULL PRIMARY KEY,
-		timestamp DATETIME NOT NULL,
-		up INTEGER NOT NULL CHECK (up IN (0, 1)),
-		hookId TEXT NOT NULL
-	)`
-	_, err := db.Exec(createMonitorsTable)
-	if err != nil {
-		log.Fatal().Err(err).Msg("unable to create table - monitors")
-	}
-	_, err = db.Exec(createHeartbeatsTable)
-	if err != nil {
-		log.Fatal().Err(err).Msg("unable to create table - heartbeats")
-	}
-}
-
-func (s *HookService) CreateHook(description string) (*CreatedHook, error) {
+func (s *HookService) CreateHook(body CreatHookBody) (*CreatedHook, error) {
 	if s == nil {
 		log.Error().Msg("s is nil")
 	}
 	if &s.Db == nil {
 		log.Warn().Msg("DB is nil")
 	}
-	const insertQuery = `INSERT INTO monitors (timestamp, description, uniqueId) VALUES (?, ?, ?)`
+	const insertQuery = `
+	INSERT INTO monitors (timestamp, description, uniqueId, failureThreshold, durationThreshold) 
+		VALUES (?, ?, ?, ?, ?)
+	`
 	stmt, err := s.Db.Prepare(insertQuery)
 	if err != nil {
 		log.Error().Err(err).Msg("")
@@ -89,14 +64,19 @@ func (s *HookService) CreateHook(description string) (*CreatedHook, error) {
 	defer stmt.Close()
 
 	uniqueId := ksuid.New()
-	_, err = stmt.Exec(time.Now().UTC(), description, uniqueId.String())
+	_, err = stmt.Exec(time.Now().UTC(),
+		body.Description,
+		uniqueId.String(),
+		body.Condition.FailureThreshold,
+		body.Condition.DurationThreshold,
+	)
 	if err != nil {
 		return nil, err
 	}
 
 	return &CreatedHook{
 		Hook:        fmt.Sprintf("https://%s/hooks/%s", s.Host, uniqueId.String()),
-		Description: description,
+		Description: body.Description,
 		Token:       s.GetToken(uniqueId.String()),
 	}, nil
 }
@@ -152,7 +132,7 @@ func (s *HookService) SaveHeartbeat(id string, up bool) (ok bool, err error) {
 	return true, nil
 }
 
-func (s *HookService) UpdateHook(id, description string) (bool, error) {
+func (s *HookService) UpdateHook(id string, body UpdateHookBody) (bool, error) {
 	if s == nil {
 		log.Error().Msg("s is nil")
 	}
@@ -160,22 +140,45 @@ func (s *HookService) UpdateHook(id, description string) (bool, error) {
 		log.Warn().Msg("DB is nil")
 	}
 	defer s.Db.Close()
-	const query = `UPDATE monitors SET description = ? WHERE uniqueId = ?`
-	stmt, err := s.Db.Prepare(query)
-	if err != nil {
-		log.Error().Err(err).Msg("failed to prepare update query")
-		return false, err
-	}
-	defer stmt.Close()
 
-	result, err := stmt.Exec(description, id)
-	if err != nil {
-		log.Error().Err(err).Err(err).Msg("failed to update hook")
-		return false, err
+	if body.Description == "" {
+		const updateDescriptionQuery = `UPDATE monitors SET description = ? WHERE uniqueId = ?`
+		stmt, err := s.Db.Prepare(updateDescriptionQuery)
+		if err != nil {
+			log.Error().Err(err).Msg("failed to prepare update query")
+			return false, err
+		}
+		defer stmt.Close()
+
+		result, err := stmt.Exec(body.Description, id)
+		if err != nil {
+			log.Error().Err(err).Err(err).Msg("failed to update hook")
+			return false, err
+		}
+		rowsAff, _ := result.RowsAffected()
+		if rowsAff < 1 {
+			log.Warn().Any("rows affected", rowsAff).Msg("no error received but no rows affected")
+		}
 	}
-	rowsAff, _ := result.RowsAffected()
-	if rowsAff < 1 {
-		log.Warn().Any("rows affected", rowsAff).Msg("no error received but no rows affected")
+
+	if body.Condition != (HookCondition{}) {
+		const updateDurationQuery = `UPDATE monitors SET durationThreshold = ?, failureThreshold = ? WHERE uniqueId = ?`
+		stmt, err := s.Db.Prepare(updateDurationQuery)
+		if err != nil {
+			log.Error().Err(err).Msg("failed to prepare update query")
+			return false, err
+		}
+		defer stmt.Close()
+
+		result, err := stmt.Exec(body.Condition.DurationThreshold, body.Condition.FailureThreshold, id)
+		if err != nil {
+			log.Error().Err(err).Msg("failed to update hook")
+			return false, err
+		}
+		rowsAff, _ := result.RowsAffected()
+		if rowsAff < 1 {
+			log.Warn().Any("rows affected", rowsAff).Msg("no error received but no rows affected")
+		}
 	}
 
 	return true, nil

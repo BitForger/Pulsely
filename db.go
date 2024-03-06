@@ -25,5 +25,35 @@ func NewDbConnection() (bool, *sql.DB, error) {
 		return false, nil, err
 	}
 
+	prepareTables(db)
+
 	return true, db, nil
+}
+
+func prepareTables(db *sql.DB) {
+	log.Debug().Msg("Create tables if doesn't exist")
+	const createMonitorsTable string = `
+	CREATE TABLE IF NOT EXISTS monitors (
+		id INTEGER NOT NULL PRIMARY KEY,
+		timestamp DATETIME NOT NULL,
+		description TEXT,
+		failureThreshold INT,
+		durationThreshold INT,
+		uniqueId TEXT
+	)`
+	const createHeartbeatsTable string = `
+	CREATE TABLE IF NOT EXISTS heartbeats (
+		id INTEGER NOT NULL PRIMARY KEY,
+		timestamp DATETIME NOT NULL,
+		up INTEGER NOT NULL CHECK (up IN (0, 1)),
+		hookId TEXT NOT NULL
+	)`
+	_, err := db.Exec(createMonitorsTable)
+	if err != nil {
+		log.Fatal().Err(err).Msg("unable to create table - monitors")
+	}
+	_, err = db.Exec(createHeartbeatsTable)
+	if err != nil {
+		log.Fatal().Err(err).Msg("unable to create table - heartbeats")
+	}
 }

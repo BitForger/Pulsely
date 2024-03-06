@@ -6,13 +6,28 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type CreatHookBody struct {
-	Description string `json:"description"`
+// HookCondition is a struct that represents the condition for a hook
+// FailureThreshold is the number of failures before the hook is considered down
+// DurationThreshold is the number of seconds before the hook is considered down
+type HookCondition struct {
+	FailureThreshold  int `json:"failureThreshold"`
+	DurationThreshold int `json:"durationThreshold"`
 }
 
-type UpdateHookBody = CreatHookBody
+// CreatHookBody is a struct that represents the request body for creating a hook
+// Description is the description of the hook
+// Condition is the condition for the hook
+type CreatHookBody struct {
+	Description string        `json:"description"`
+	Condition   HookCondition `json:"condition"`
+}
 
-func HookCreatehook(ctx fiber.Ctx) error {
+type UpdateHookBody struct {
+	Description string        `json:"description"`
+	Condition   HookCondition `json:"condition"`
+}
+
+func HookCreateHook(ctx fiber.Ctx) error {
 	var bodyJson CreatHookBody
 	err := json.Unmarshal(ctx.Body(), &bodyJson)
 	if err != nil {
@@ -21,7 +36,7 @@ func HookCreatehook(ctx fiber.Ctx) error {
 	log.Info().Any("body", bodyJson.Description).Msg("print body")
 
 	hs, _ := NewHookService()
-	hook, _ := hs.CreateHook(bodyJson.Description)
+	hook, _ := hs.CreateHook(bodyJson)
 
 	return ctx.JSON(*hook)
 }
@@ -49,7 +64,7 @@ func UpdateHeartbeat(ctx fiber.Ctx) error {
 	}
 
 	hSvc, _ := NewHookService()
-	ok, err := hSvc.UpdateHook(id, updateHookBody.Description)
+	ok, err := hSvc.UpdateHook(id, updateHookBody)
 	if !ok {
 		log.Error().Err(err).Msg("failed to update hook")
 		return ctx.SendStatus(fiber.StatusInternalServerError)

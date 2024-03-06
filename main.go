@@ -85,7 +85,7 @@ func main() {
 
 	// Define routes
 	v1 := app.Group("api/v1")
-	v1.Post("hooks", HookCreatehook)
+	v1.Post("hooks", HookCreateHook)
 	v1.Post("hooks/:id", HookCreateHeartbeat)
 	v1.Patch("hooks/:id", UpdateHeartbeat)
 
