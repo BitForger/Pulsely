@@ -141,7 +141,8 @@ func (s *HookService) UpdateHook(id string, body UpdateHookBody) (bool, error) {
 	}
 	defer s.Db.Close()
 
-	if body.Description == "" {
+	// Update description
+	if body.Description != "" {
 		const updateDescriptionQuery = `UPDATE monitors SET description = ? WHERE uniqueId = ?`
 		stmt, err := s.Db.Prepare(updateDescriptionQuery)
 		if err != nil {
@@ -161,6 +162,7 @@ func (s *HookService) UpdateHook(id string, body UpdateHookBody) (bool, error) {
 		}
 	}
 
+	// Update condition
 	if body.Condition != (HookCondition{}) {
 		const updateDurationQuery = `UPDATE monitors SET durationThreshold = ?, failureThreshold = ? WHERE uniqueId = ?`
 		stmt, err := s.Db.Prepare(updateDurationQuery)
