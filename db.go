@@ -37,8 +37,8 @@ func prepareTables(db *sql.DB) {
 		id INTEGER NOT NULL PRIMARY KEY,
 		timestamp DATETIME NOT NULL,
 		description TEXT,
-		failureThreshold INT,
-		durationThreshold INT,
+		failureThreshold TEXT DEFAULT 5,
+		durationThreshold TEXT DEFAULT '5m',
 		uniqueId TEXT
 	)`
 	const createHeartbeatsTable string = `

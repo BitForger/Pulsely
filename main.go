@@ -89,5 +89,8 @@ func main() {
 	v1.Post("hooks/:id", HookCreateHeartbeat)
 	v1.Patch("hooks/:id", UpdateHeartbeat)
 
+	go func() {
+		StartMonitors()
+	}()
 	app.Listen(":3000")
 }
