@@ -72,3 +72,15 @@ func UpdateHeartbeat(ctx fiber.Ctx) error {
 
 	return ctx.SendStatus(fiber.StatusOK)
 }
+
+func GetHeartbeats(ctx fiber.Ctx) error {
+	hSvc, _ := NewHookService()
+	id := ctx.Params("hook_id")
+	heartbeats, err := hSvc.GetHeartbeats(id)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to get heartbeats")
+		return ctx.SendStatus(fiber.StatusInternalServerError)
+	}
+
+	return ctx.JSON(heartbeats)
+}

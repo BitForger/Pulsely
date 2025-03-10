@@ -37,7 +37,7 @@ func prepareTables(db *sql.DB) {
 		id INTEGER NOT NULL PRIMARY KEY,
 		timestamp DATETIME NOT NULL,
 		description TEXT,
-		failureThreshold TEXT DEFAULT 5,
+		failureThreshold INT DEFAULT 5,
 		durationThreshold TEXT DEFAULT '5m',
 		uniqueId TEXT
 	)`
@@ -48,6 +48,26 @@ func prepareTables(db *sql.DB) {
 		up INTEGER NOT NULL CHECK (up IN (0, 1)),
 		hookId TEXT NOT NULL
 	)`
+	const createIntegrationsTable string = `
+	CREATE TABLE IF NOT EXISTS integrations (
+		id INTEGER NOT NULL PRIMARY KEY,
+		name TEXT NOT NULL,
+		integrationType TEXT NOT NULL CHECK ( integrationType IN ('slack') ),
+		botToken TEXT NOT NULL CHECK (integrationType = 'slack'),
+		botUserId TEXT NOT NULL CHECK (integrationType = 'slack'),
+		teamId TEXT NOT NULL CHECK (integrationType = 'slack'),
+		enterpriseId TEXT NOT NULL CHECK (integrationType = 'slack')
+	)`
+	const createUsersTable string = `
+	CREATE TABLE IF NOT EXISTS users (
+		id INTEGER NOT NULL PRIMARY KEY,
+		first_name TEXT	  NOT NULL,
+		last_name TEXT	  NOT NULL,
+		email TEXT	  NOT NULL,
+		uid TEXT	  NOT NULL,
+		role TEXT	  NOT NULL CHECK (role IN ('admin', 'user')),
+		created_at DATETIME NOT NULL
+	)`
 	_, err := db.Exec(createMonitorsTable)
 	if err != nil {
 		log.Fatal().Err(err).Msg("unable to create table - monitors")
@@ -55,5 +75,13 @@ func prepareTables(db *sql.DB) {
 	_, err = db.Exec(createHeartbeatsTable)
 	if err != nil {
 		log.Fatal().Err(err).Msg("unable to create table - heartbeats")
+	}
+	_, err = db.Exec(createIntegrationsTable)
+	if err != nil {
+		log.Fatal().Err(err).Msg("unable to create table - integrations")
+	}
+	_, err = db.Exec(createUsersTable)
+	if err != nil {
+		log.Fatal().Err(err).Msg("unable to create table - users")
 	}
 }

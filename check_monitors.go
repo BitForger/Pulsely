@@ -10,7 +10,7 @@ import (
 type Monitor struct {
 	Description       string
 	UniqueId          string
-	FailureThreshold  string
+	FailureThreshold  int
 	DurationThreshold string
 }
 
@@ -39,7 +39,7 @@ func StartMonitors() {
 		// if a monitor is removed, remove it from the monitors channel
 		// if a monitor is updated, update the monitor in the monitors channel
 
-		duration := 5 * time.Second
+		duration := 30 * time.Second
 		timer := time.NewTimer(duration)
 		for {
 			select {
@@ -88,11 +88,11 @@ func StartMonitors() {
 						log.Error().Err(queryErr).Msg("query failed")
 					}
 				}
-
 				defer rows.Close()
+
 				var description string
 				var uniqueId string
-				var failureThreshold string
+				var failureThreshold int
 				var durationThreshold string
 				for rows.Next() {
 					if scanErr := rows.Scan(&description, &uniqueId, &failureThreshold, &durationThreshold); scanErr != nil {
@@ -105,7 +105,6 @@ func StartMonitors() {
 						FailureThreshold:  failureThreshold,
 						DurationThreshold: durationThreshold,
 					}
-					activeMonitors[uniqueId] = true
 
 					log.Debug().Str("monitor", obj.UniqueId).Msg("sending monitor to channel")
 					monitors <- obj
@@ -119,22 +118,76 @@ func StartMonitors() {
 
 	var wg sync.WaitGroup
 	for mon := range monitors {
+		if activeMonitors[mon.UniqueId] {
+			log.Debug().Str("monitor", mon.UniqueId).Msg("monitor already active")
+			continue
+		}
+
 		log.Debug().Str("monitor", mon.UniqueId).Msg("adding monitor")
+		/**
+		* Spawn a goroutine for each monitor to check the heartbeat status
+		* The goroutine will check the heartbeat status every 5 seconds
+		* If the heartbeat status is down, send a notification
+		 */
 		wg.Add(1)
 		go func(m Monitor) {
 			defer wg.Done()
-			log.Debug().Str("monitor", m.UniqueId).Msg("starting monitor")
-			// query the heartbeats table for all heartbeats within the duration threshold
-			// if the number of heartbeats is greater than the failure threshold, mark the monitor as down
-			const query = `SELECT COUNT(*) FROM heartbeats WHERE hookId = ? AND timestamp > ? AND up = 0`
-
-			stmt, err := db.Prepare(query)
-			if err != nil {
-				log.Error().Err(err).Msg("failed to prepare heartbeat query")
-			}
-
-			stmt.Query(m.UniqueId, m.DurationThreshold)
-
+			CheckHeartbeat(m, activeMonitors, db)
 		}(mon)
 	}
+}
+
+func CheckHeartbeat(m Monitor, activeMonitors map[string]bool, db *sql.DB) {
+	timer := time.NewTimer(5 * time.Second)
+
+	for {
+		select {
+		case <-timer.C:
+			activeMonitors[m.UniqueId] = true
+			log.Debug().Str("monitor", m.UniqueId).Msg("executing monitor")
+
+			dur, err := time.ParseDuration(m.DurationThreshold)
+			if err != nil {
+				log.Error().Err(err).Str("uniqueId", m.UniqueId).Msg("failed to parse duration")
+			}
+			timestamp := time.Now().Add(-1 * dur)
+
+			ok, count := QueryHeartbeatsStatus(m, db, timestamp)
+			if !ok {
+				log.Error().Str("uniqueId", m.UniqueId).Msg("failed to get heartbeat status")
+				continue
+			}
+
+			if count > m.FailureThreshold {
+				// need a way to send a notification here
+				log.Info().Str("monitor", m.UniqueId).Msg("monitor is down")
+			}
+
+			timer.Reset(1 * time.Minute)
+		}
+	}
+}
+
+func QueryHeartbeatsStatus(m Monitor, db *sql.DB, timestamp time.Time) (bool, int) {
+	const query = `SELECT COUNT(*) FROM heartbeats WHERE hookId = ? AND timestamp > ? AND up = 0`
+	stmt, err := db.Prepare(query)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to prepare heartbeat query")
+		return false, 0
+	}
+	rows, err := stmt.Query(m.UniqueId, timestamp)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to execute heartbeat query")
+		return false, 0
+	}
+
+	var count int
+	for rows.Next() {
+		if err := rows.Scan(&count); err != nil {
+			log.Error().Err(err).Str("uniqueId", m.UniqueId).Msg("failed to scan row")
+			return false, 0
+		}
+	}
+	rows.Close()
+	return true, count
 }

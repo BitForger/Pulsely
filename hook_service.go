@@ -27,6 +27,11 @@ type CreatedHook struct {
 	Token       string `json:"token"`
 }
 
+type Heartbeat struct {
+	Timestamp int64 `json:"timestamp"`
+	Up        bool  `json:"up"`
+}
+
 func NewHookService() (HookService, error) {
 	hostEnvVar, found := os.LookupEnv("BEATMON_HOST")
 	if !found {
@@ -184,4 +189,33 @@ func (s *HookService) UpdateHook(id string, body UpdateHookBody) (bool, error) {
 	}
 
 	return true, nil
+}
+
+func (s *HookService) GetHeartbeats(id string) ([]Heartbeat, error) {
+	const getHeartbeatsQuery = `SELECT timestamp, up FROM heartbeats WHERE hookId = ?`
+	stmt, err := s.Db.Prepare(getHeartbeatsQuery)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to prepare get heartbeats query")
+		return nil, err
+	}
+	defer stmt.Close()
+
+	rows, err := stmt.Query(id)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to execute get heartbeats query")
+		return nil, err
+	}
+	defer rows.Close()
+
+	var heartbeats []Heartbeat
+	for rows.Next() {
+		var heartbeat Heartbeat
+		if err := rows.Scan(&heartbeat.Timestamp, &heartbeat.Up); err != nil {
+			log.Error().Err(err).Msg("failed to scan heartbeat row")
+			return nil, err
+		}
+		heartbeats = append(heartbeats, heartbeat)
+	}
+
+	return heartbeats, nil
 }
